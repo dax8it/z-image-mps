@@ -1,4 +1,5 @@
 import argparse
+import inspect
 import os
 import secrets
 from datetime import datetime
@@ -29,7 +30,7 @@ def pick_device(preferred: str = "auto") -> Tuple[str, torch.dtype]:
     if preferred != "auto":
         normalized = preferred.lower()
         if normalized == "mps" and torch.backends.mps.is_available():
-            return "mps", torch.float16
+            return "mps", torch.bfloat16
         if normalized == "cuda" and torch.cuda.is_available():
             return "cuda", torch.bfloat16
         if normalized == "cpu":
@@ -37,7 +38,7 @@ def pick_device(preferred: str = "auto") -> Tuple[str, torch.dtype]:
         print(f"Warning: Requested device '{preferred}' not available, falling back to auto.")
 
     if torch.backends.mps.is_available():
-        return "mps", torch.float16
+        return "mps", torch.bfloat16
     if torch.cuda.is_available():
         return "cuda", torch.bfloat16
     return "cpu", torch.float32
@@ -66,12 +67,20 @@ def configure_attention(pipe: ZImagePipeline, backend: str) -> None:
         print(f"Warning: could not enable {backend} attention ({exc}); using default SDPA.")
 
 
-def load_pipeline(args, device: str, torch_dtype: torch.dtype) -> ZImagePipeline:
-    pipe = ZImagePipeline.from_pretrained(
-        "Tongyi-MAI/Z-Image-Turbo",
-        torch_dtype=torch_dtype,
-        low_cpu_mem_usage=False,
-    )
+def load_pipeline(args, device: str, dtype: torch.dtype) -> ZImagePipeline:
+    load_kwargs = {"low_cpu_mem_usage": False}
+    # Newer diffusers uses dtype; older versions still expect torch_dtype.
+    if "dtype" in inspect.signature(ZImagePipeline.from_pretrained).parameters:
+        load_kwargs["dtype"] = dtype
+    else:
+        load_kwargs["torch_dtype"] = dtype
+
+    pipe = ZImagePipeline.from_pretrained("Tongyi-MAI/Z-Image-Turbo", **load_kwargs)
+
+    # Decode in float32 to avoid NaNs/RuntimeWarnings when weights use lower precision.
+    if dtype != torch.float32 and hasattr(pipe, "vae"):
+        pipe.vae.to(dtype=torch.float32)
+        pipe.vae.config.force_upcast = True
 
     configure_attention(pipe, args.attention_backend)
 
@@ -91,10 +100,10 @@ def load_pipeline(args, device: str, torch_dtype: torch.dtype) -> ZImagePipeline
 
 
 def run_generation(args) -> None:
-    device, torch_dtype = pick_device(args.device)
-    print(f"Using device: {device} (dtype={torch_dtype})")
+    device, dtype = pick_device(args.device)
+    print(f"Using device: {device} (dtype={dtype})")
 
-    pipe = load_pipeline(args, device, torch_dtype)
+    pipe = load_pipeline(args, device, dtype)
 
     if args.aspect:
         height, width = ASPECT_RATIOS[args.aspect]
