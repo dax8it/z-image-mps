@@ -1,5 +1,6 @@
 import argparse
 import os
+import random
 from functools import lru_cache
 from types import SimpleNamespace
 from typing import Optional, Tuple
@@ -58,7 +59,7 @@ def generate_image(
     aspect: str,
     height: int,
     width: int,
-    seed: Optional[int],
+    seed: str,
     attention_backend: str,
     device_choice: str,
     compile_flag: bool,
@@ -68,20 +69,34 @@ def generate_image(
 ):
     steps = max(1, int(steps))
     guidance = float(guidance)
+
+    # Handle dimensions: aspect ratio presets vs custom
+    # NOTE: ASPECT_RATIOS stores (width, height) tuples
     if aspect != "custom":
-        h, w = ASPECT_RATIOS.get(aspect, (1024, 1024))
+        w, h = ASPECT_RATIOS.get(aspect, (1024, 1024))
     else:
         h = _coerce_int(height, 1024)
         w = _coerce_int(width, 1024)
+        # Ensure dimensions are multiples of 16 for the model
+        h = (h // 16) * 16
+        w = (w // 16) * 16
 
     pipe, device, dtype = _cached_pipeline(
         device_choice, attention_backend, compile_flag, cpu_offload, lora_name, lora_scale
     )
 
-    if seed is None or seed == 0:
-        seed = torch.seed() % (2**63 - 1)
-    else:
-        seed = int(seed)
+    # Handle seed: parse from string to preserve precision for large integers
+    # (JavaScript loses precision for integers > 2^53)
+    seed_str = str(seed).strip() if seed else ""
+    try:
+        seed_val = int(seed_str) if seed_str and seed_str != "0" else 0
+    except (ValueError, TypeError):
+        seed_val = 0
+
+    if seed_val == 0:
+        # Generate a truly random seed
+        seed_val = random.randint(1, 2**63 - 1)
+    seed = seed_val
 
     generator = create_generator(device, seed)
 
@@ -137,15 +152,40 @@ def build_app():
                     )
 
                 aspect = gr.Dropdown(
-                    label="Aspect ratio",
+                    label="Aspect ratio (select 'custom' to use manual width/height)",
                     choices=list(ASPECT_RATIOS.keys()) + ["custom"],
                     value="1:1",
                 )
                 with gr.Row():
-                    height = gr.Number(label="Height (px, custom)", value=1024, precision=0)
-                    width = gr.Number(label="Width (px, custom)", value=1024, precision=0)
+                    height = gr.Number(
+                        label="Height (px) - only used with 'custom' aspect",
+                        value=1024,
+                        precision=0,
+                        interactive=False,
+                    )
+                    width = gr.Number(
+                        label="Width (px) - only used with 'custom' aspect",
+                        value=1024,
+                        precision=0,
+                        interactive=False,
+                    )
 
-                seed = gr.Number(label="Seed (0 or empty = random)", value=0, precision=0)
+                # Make width/height editable only when aspect is "custom"
+                def update_dimension_interactivity(aspect_val):
+                    is_custom = aspect_val == "custom"
+                    return gr.update(interactive=is_custom), gr.update(interactive=is_custom)
+
+                aspect.change(
+                    fn=update_dimension_interactivity,
+                    inputs=[aspect],
+                    outputs=[height, width],
+                )
+
+                seed = gr.Textbox(
+                    label="Seed (0 or empty = random)",
+                    value="",
+                    placeholder="Leave empty for random seed",
+                )
 
             with gr.Column(scale=2):
                 device_choice = gr.Radio(
@@ -180,6 +220,74 @@ def build_app():
         with gr.Row():
             image_out = gr.Image(label="Result")
             info = gr.Textbox(label="Run info", interactive=False)
+
+        # Reference section for settings and dimensions
+        with gr.Accordion("� Settings Guide & Dimension Reference", open=False):
+            gr.Markdown("""
+## ⚙️ Recommended Settings
+
+### Steps
+| Steps | Speed | Quality | When to Use |
+|-------|-------|---------|-------------|
+| **4-6** | ⚡ Fastest | Good | Quick previews, testing prompts |
+| **8-10** | 🚀 Fast | Great | **Recommended default** (Turbo model is optimized here) |
+| **12-15** | 🐢 Slower | Excellent | Final renders, maximum detail |
+| **16-20** | 🐌 Slowest | Diminishing returns | Usually unnecessary for Turbo |
+
+> 💡 **Tip:** Z-Image Turbo is designed for speed. **9 steps** is the sweet spot for quality vs time.
+
+### Guidance Scale
+| Value | Effect |
+|-------|--------|
+| **0.0** | **Recommended for Turbo** — model follows prompt naturally |
+| **1.0-2.0** | Slightly stronger prompt adherence |
+| **3.0-5.0** | Very strict prompt following (may reduce creativity) |
+
+> 💡 **Tip:** Unlike other models, Z-Image Turbo works best with **guidance = 0.0**
+
+### Seed
+- **Empty or 0** → Random seed each generation (for variety)
+- **Specific number** → Reproducible results (same prompt + seed = same image)
+
+> 💡 **Tip:** Copy a seed from "Run info" to recreate or iterate on an image you like.
+
+---
+
+## 📐 Dimension Reference
+
+### Preset Aspect Ratios
+| Aspect | Width × Height | Use Case |
+|--------|----------------|----------|
+| **1:1** | 1024 × 1024 | Square, social media posts |
+| **16:9** | 1280 × 720 | Landscape, widescreen, YouTube |
+| **9:16** | 720 × 1280 | Portrait, mobile, TikTok/Reels |
+| **4:3** | 1088 × 816 | Classic landscape, presentations |
+| **3:4** | 816 × 1088 | Classic portrait |
+
+### Custom Dimensions (up to 2K)
+*All values must be multiples of 16. Select "custom" aspect ratio to use these.*
+
+| Type | Dimensions |
+|------|------------|
+| **Square** | 1536×1536, 2048×2048 |
+| **Landscape 16:9** | 1920×1088, 2048×1152 |
+| **Portrait 9:16** | 1088×1920, 1152×2048 |
+| **Landscape 3:2** | 1536×1024, 1920×1280 |
+| **Portrait 2:3** | 1024×1536, 1280×1920 |
+
+> ⚠️ **VRAM Note:** Higher resolutions need more memory. On 16GB Apple Silicon, 1536×1536 or 1920×1088 are recommended max sizes.
+
+---
+
+## 🎨 Quick Start Recipe
+For best results, start with these settings:
+- **Steps:** 9
+- **Guidance:** 0.0
+- **Aspect:** 1:1 or 16:9
+- **Seed:** Empty (random)
+
+Then adjust based on your needs!
+""")
 
         run_btn.click(
             fn=generate_image,
