@@ -4,3 +4,4 @@ __pycache__/
 output/
 uv.lock
 loras/
+!loras/README.md
