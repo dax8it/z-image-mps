@@ -8,6 +8,7 @@ Generate images locally with **Tongyi-MAI/Z-Image-Turbo** using a tiny CLI that 
 - Aspect presets (multiples of 16) plus manual height/width overrides
 - Optional `torch.compile`, FlashAttention 2/3 switches, and CPU offload (CUDA)
 - LoRA support with included Technically-Color Z-Image Turbo LoRA for enhanced colors
+- In-app Gradio **Settings Guide & Dimension Reference** explaining steps, guidance, seeds, and recommended resolutions
 - `uv`-first: run without installing, or install/edit via `uv pip install -e .`
 
 ## Quick start
@@ -39,7 +40,24 @@ uv run z-image-mps-gradio --host 0.0.0.0 --port 7860
 uv run python -m z_image_mps.gradio_app
 ```
 
-The UI exposes prompt, negative prompt, steps, guidance (defaults to 0.0), aspect/custom size, seed, device selection, attention backend (SDPA/Flash2/Flash3), optional `torch.compile`, CUDA CPU-offload, and LoRA selection with scale adjustment.
+The UI exposes:
+
+- Prompt and negative prompt
+- Steps (1–20, default 9)
+- Guidance scale (0.0–5.0, default 0.0 – Turbo is optimized for 0.0)
+- Aspect ratio presets (`1:1`, `16:9`, `9:16`, `4:3`, `3:4`) or `custom` size
+- Custom width/height (only used when aspect is set to `custom`, auto-rounded to multiples of 16)
+- Seed (text box; empty/`0` = random, any integer = reproducible)
+- Device selection (`auto`, `mps`, `cuda`, `cpu`)
+- Attention backend (`sdpa`, `flash2`, `flash3`)
+- Optional `torch.compile`, CUDA CPU-offload
+- LoRA selection with adjustable LoRA scale
+
+The Gradio app also includes an in-UI **"Settings Guide & Dimension Reference"** accordion that explains:
+
+- Recommended values for steps and guidance
+- How the seed works and how to copy it from the "Run info" box
+- Valid resolution presets and common custom resolutions (up to 2K, multiples of 16)
 
 ## CLI reference
 
@@ -140,6 +158,42 @@ In the Gradio UI, the LoRA will automatically appear in the dropdown menu after 
 - `1.5-2.0` - Strong effect (may cause artifacts depending on the LoRA)
 
 Always experiment with different scales to find the best result for your specific LoRA and prompt combination.
+
+### Built-in Technically-Color Z-Image LoRA
+
+This repo is configured to work nicely with the **Technically-Color Z-Image Turbo LoRA** for enhanced color and contrast.
+
+**Trigger word:**
+
+- The LoRA is designed around the trigger word **`t3chnic4lly`**.
+- To activate the LoRA’s style, include `t3chnic4lly` somewhere in your prompt.
+- Example:
+  ```text
+  A vibrant sunset over the ocean, t3chnic4lly, ultra colorful, cinematic lighting
+  ```
+
+**From the CLI:**
+
+```bash
+z-image-mps \
+  -p "A vibrant sunset over the ocean, t3chnic4lly, ultra colorful, cinematic lighting" \
+  --lora Technically-Color-Z-Image-Turbo \
+  --lora-scale 1.2
+```
+
+**From the Gradio UI:**
+
+1. Make sure the Technically-Color LoRA is present under `loras/Technically-Color-Z-Image-Turbo/` with its `.safetensors` file.
+2. Restart the Gradio app so it picks up new LoRAs.
+3. In the right panel:
+   - **LoRA** → select `Technically-Color-Z-Image-Turbo`
+   - **LoRA Scale** → start at `1.0` (increase to `1.2–1.5` for stronger effect)
+4. In the prompt box, include the trigger word, for example:
+   ```text
+   Analog film portrait of a skateboarder, t3chnic4lly, warm colors, backlit
+   ```
+
+Without the trigger word, the LoRA will still influence the image, but you’ll usually get the best Technically-Color effect when **`t3chnic4lly`** is explicitly present in the prompt.
 
 ## Demo output
 
