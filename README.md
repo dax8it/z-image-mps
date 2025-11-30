@@ -202,6 +202,14 @@ Without the trigger word, the LoRA will still influence the image, but you’ll 
 | A magical forest with magical tress and magical mushrooms | ![Magical Forest](magicalforest.png) |
 | Default prompt (Hanfu) | ![Sample](sample.png) |
 
+## Credits & links
+
+- **Original Z-Image MPS implementation** by [Ivan Fioravanti](https://github.com/ivanfioravanti/z-image-mps)
+- **Technically-Color Z-Image Turbo LoRA** by [renderartist](https://huggingface.co/renderartist/Technically-Color-Z-Image-Turbo)
+- **Elusarca Anime Style LoRA for Z-Image Turbo** by [reverentelusarca](https://huggingface.co/reverentelusarca/elusarca-anime-style-lora-z-image-turbo)
+
+This project builds on the excellent work of the original authors and LoRA creators; please refer to their repositories and model cards for full details, licenses, and usage notes.
+
 ## Why "MPS"?
 
 The original `qwen-image-mps` project focused on making Apple Silicon a first-class citizen. This repo keeps the same spirit: MPS when available, CUDA when present, CPU as a fallback. Everything is packaged to work smoothly with `uv` so you can try Z-Image quickly on a MacBook or GPU box.
